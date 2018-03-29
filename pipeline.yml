@@ -1,0 +1,48 @@
+groups:
+- name: my-group
+  jobs:
+  - my-test-app
+
+resource_types:
+- name: gitlab-secret
+  type: docker-image
+  source:
+    repository: manulifeoss/concourse-resource-gitlab-secret
+    tag: latest
+
+resources:
+- name: gitlab_secrets
+  type: gitlab-secret
+  source:
+    uri: https://GITLAB_URL
+    project_path: gitlab_group/gitlab_project
+    private_token: "MYPRIVATETOKEN"
+    debug: true
+
+jobs:
+- name: my-test-app
+  public: true
+  serial: true
+  plan:
+  - get: gitlab_secrets
+    params:
+      secrets:
+      - "MYSECRET" 
+  - task: "PCF deploy"
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: myregsitry/mydocker_image
+      inputs:
+      - name: gitlab_secrets
+      run:
+        path: sh
+        args:
+        - "-exc"
+        - |
+          echo "This is a sample pipeline"
+          ls gitlab_secrets
+          echo "PRINT SECRETS"
+          cat gitlab_secrets/MYSECRET.json

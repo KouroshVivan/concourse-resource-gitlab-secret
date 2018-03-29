@@ -1,0 +1,79 @@
+#!/usr/local/bin/python
+"""`in` binary for Concourse Jenkins resource type"""
+import datetime
+import json
+import os
+import logging
+import sys
+
+import gitlab
+
+FORMAT = '%(asctime)-15s %(levelname)-7s %(name)-5s %(message)s'
+logging.basicConfig(format=FORMAT, level=logging.INFO)
+_LOGGER = logging.getLogger("in").getChild("gitlab")
+
+DEFAULT_TIMEOUT = 3
+
+
+def run():
+    """This function read stdin and print json to give to
+    Concourse which Jenkins build was successful.
+
+    The stdin is given by Concourse and the stdout is read by Concourse.
+
+    ref: https://concourse.ci/implementing-resources.html#in
+    """
+    # Read input
+    destination = sys.argv[1]
+    input_raw_data = None
+    with sys.stdin as stdin:
+        input_raw_data = stdin.read()
+    input_data = json.loads(input_raw_data)
+    # Set variables
+    debug = input_data["source"].get("debug", False)
+    if debug:
+        _LOGGER.setLevel(logging.DEBUG)
+    _LOGGER.debug("`IN` for Gitlab resource type started")
+
+    url = input_data["source"]["uri"]
+    private_token = input_data["source"]["private_token"]
+    project_path = input_data["source"]["project_path"]
+    timeout = input_data["source"].get("timeout", DEFAULT_TIMEOUT)
+    secrets = input_data["params"]["secrets"]
+
+    # Get data from Jenkins
+    _LOGGER.debug("Get data from Gitlab `%s` and project `%s",
+                  url, project_path)
+    gl_client = gitlab.Gitlab(url,
+                              private_token=private_token,
+                              timeout=timeout)
+    try:
+        project = gl_client.projects.get(project_path)
+    except gitlab.exceptions.GitlabError as exp:
+        _LOGGER.error("Getting `%s` project: `%s`",
+                      project_path, exp.message)
+        sys.exit(1)
+    if not os.path.exists(destination):
+        os.makedirs(destination)
+    for secret_name in secrets:
+        _LOGGER.debug("Getting GitLab Secret `%s`", secret_name)
+        try:
+            secret = project.variables.get(secret_name)
+        except gitlab.exceptions.GitlabError as exp:
+            _LOGGER.error("Getting `%s` project secret: `%s`",
+                          secret_name, exp.message)
+            sys.exit(2)
+        output = {"value": secret.value}
+        output_file = os.path.join(destination, secret_name + ".json")
+        with open(output_file, "w") as output_fh:
+            json.dump(output, output_fh)
+            _LOGGER.debug("GitLab Secret `%s` saved in `%s`",
+                          secret_name, output_file)
+
+    version = {"date": datetime.datetime.now().strftime("%s")}
+    print(json.dumps({"version": version}))
+    _LOGGER.debug("`IN` for GitLab Secret resource type completed")
+
+
+if __name__ == '__main__':
+    run()

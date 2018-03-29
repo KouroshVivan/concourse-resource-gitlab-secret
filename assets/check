@@ -1,0 +1,10 @@
+#!/usr/local/bin/python
+"""`check` binary for Concourse Gitlab Secret resource type"""
+# Always indicate a new version is available by setting
+# the version to the current date
+
+import json
+import datetime
+
+OUTPUT = [{"date": datetime.datetime.now().strftime("%s")}]
+print(json.dumps(OUTPUT))
