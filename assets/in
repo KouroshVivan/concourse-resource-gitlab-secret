@@ -1,5 +1,5 @@
 #!/usr/local/bin/python
-"""`in` binary for Concourse Jenkins resource type"""
+"""`in` binary for Concourse Gitlab resource type"""
 import datetime
 import json
 import os
@@ -16,10 +16,7 @@ DEFAULT_TIMEOUT = 3
 
 
 def run():
-    """This function read stdin and print json to give to
-    Concourse which Jenkins build was successful.
-
-    The stdin is given by Concourse and the stdout is read by Concourse.
+    """This function read gitlab secrets in specific project
 
     ref: https://concourse.ci/implementing-resources.html#in
     """
@@ -39,9 +36,8 @@ def run():
     private_token = input_data["source"]["private_token"]
     project_path = input_data["source"]["project_path"]
     timeout = input_data["source"].get("timeout", DEFAULT_TIMEOUT)
-    secrets = input_data["params"]["secrets"]
 
-    # Get data from Jenkins
+    # Get data from Gitlab
     _LOGGER.debug("Get data from Gitlab `%s` and project `%s",
                   url, project_path)
     gl_client = gitlab.Gitlab(url,
@@ -51,24 +47,24 @@ def run():
         project = gl_client.projects.get(project_path)
     except gitlab.exceptions.GitlabError as exp:
         _LOGGER.error("Getting `%s` project: `%s`",
-                      project_path, exp.message)
+                      project_path, exp.error_message)
         sys.exit(1)
     if not os.path.exists(destination):
         os.makedirs(destination)
-    for secret_name in secrets:
-        _LOGGER.debug("Getting GitLab Secret `%s`", secret_name)
-        try:
-            secret = project.variables.get(secret_name)
-        except gitlab.exceptions.GitlabError as exp:
-            _LOGGER.error("Getting `%s` project secret: `%s`",
-                          secret_name, exp.message)
-            sys.exit(2)
-        output = {"value": secret.value}
-        output_file = os.path.join(destination, secret_name + ".json")
-        with open(output_file, "w") as output_fh:
-            json.dump(output, output_fh)
-            _LOGGER.debug("GitLab Secret `%s` saved in `%s`",
-                          secret_name, output_file)
+    try:
+        secrets = project.variables.list(all=True)
+    except gitlab.exceptions.GitlabError as exp:
+        _LOGGER.error("Getting project secret",
+                      exp.error_message)
+        sys.exit(2)
+    output_file = os.path.join(destination, "secrets.yml")
+    with open(output_file, "w") as output_fh:
+        for secret in secrets:
+            id= secret.get_id()
+            variable = project.variables.get(id)
+            line = id + ": " + variable.value
+            _LOGGER.debug("Getting GitLab Secret `%s`", id)
+            output_fh.write(line + "\n")
 
     version = {"date": datetime.datetime.now().strftime("%s")}
     print(json.dumps({"version": version}))
